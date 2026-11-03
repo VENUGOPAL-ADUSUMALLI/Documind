@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+sqlalchemy
+psycopg[binary]
+qdrant-client
+google-genai
+openai
+pymupdf
+langchain-text-splitters
+pydantic-settings
+sentence-transformers
+pytest
