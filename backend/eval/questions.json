@@ -2,32 +2,114 @@
   {
     "question": "what is the teammate names",
     "document": "Bits_Phase3_Document.pdf",
-    "pages": [1],
-    "answer": "Adusumalli Venu Gopal, Chenna Kiran Kumar, Reddy Yaswanth Ram, Dendeti Nikhil"
+    "pages": [
+      1
+    ],
+    "answer": "Adusumalli Venu Gopal, Chenna Kiran Kumar, Reddy Yaswanth Ram, Dendeti Nikhil",
+    "facts": [
+      "Venu Gopal",
+      "Kiran Kumar",
+      "Yaswanth Ram",
+      "Nikhil"
+    ]
   },
   {
     "question": "what is the reposage project",
     "document": "Gen_ai_projects.pdf",
-    "pages": [5],
+    "pages": [
+      5
+    ],
     "answer": "RepoSage project description"
   },
   {
     "question": "what is professor name",
     "document": "Bits_Phase3_Document.pdf",
-    "pages": [1],
-    "answer": "Uma Sankara Rao"
+    "pages": [
+      1
+    ],
+    "answer": "Uma Sankara Rao",
+    "facts": [
+      "Uma Sankara Rao"
+    ]
   },
   {
     "question": "what are limiatations of the project",
     "document": "Bits_Phase3_Document.pdf",
-    "pages": [6],
+    "pages": [
+      6
+    ],
     "answer": "Section 6, Limitations and Constraints"
   },
   {
     "question": "what is Document RAG Assistant project",
     "document": "Gen_ai_projects.pdf",
-    "pages": [2],
+    "pages": [
+      2
+    ],
     "answer": "Document RAG Assistant project description"
+  },
+  {
+    "question": "what are all the limitations of the project?",
+    "document": "Bits_Phase3_Document.pdf",
+    "pages": [
+      6
+    ],
+    "answer": "Section 6, 8 bullets: ABE, tree keys server-side, server holds key material, PRE trust-based, incremental sharing only PRE, SQLite/local disk, in-process console, single-machine performance test",
+    "facts": [
+      "Attribute-Based | ABE",
+      "server-side",
+      "key material",
+      "trust-based",
+      "incremental sharing",
+      "SQLite | local disk",
+      "in-process | simulates client",
+      "single machine | single-user"
+    ]
+  },
+  {
+    "question": "what future work does the project propose?",
+    "document": "Bits_Phase3_Document.pdf",
+    "pages": [
+      6,
+      7
+    ],
+    "answer": "Section 7, 7 bullets (2 on page 6, 5 on page 7)",
+    "facts": [
+      "Attribute-Based | ABE",
+      "client-side key custody | key custody",
+      "T-of-N | threshold",
+      "AWS",
+      "separate client | desktop or mobile",
+      "load-test | load test | concurrent",
+      "incremental sharing"
+    ]
+  },
+  {
+    "question": "what are the core features of the Document RAG Assistant?",
+    "document": "Gen_ai_projects.pdf",
+    "pages": [
+      2
+    ],
+    "answer": "Async ingestion with outbox, hybrid retrieval with RRF, parent-child chunking, token-budgeted context, streaming chat, LangSmith evaluation",
+    "facts": [
+      "outbox",
+      "rank fusion",
+      "parent-child",
+      "token-budgeted | token budget",
+      "streaming | SSE",
+      "LangSmith"
+    ]
+  },
+  {
+    "question": "what is the date of submission?",
+    "document": "Bits_Phase3_Document.pdf",
+    "pages": [
+      1
+    ],
+    "answer": "20 September 2026",
+    "facts": [
+      "20 September 2026"
+    ]
   },
   {
     "question": "who won t20 world cup 2024",

@@ -26,12 +26,13 @@ def answer_question(session, qdrant, embedder, llm, question, document_id=None, 
     if not sources:
         return {"answer": NO_RESULTS_ANSWER, "sources": [], "invalid_citations": []}
 
-    context = build_context(sources)
-    answer = llm.generate(question, context)
+    # Give the model the matched chunks plus their neighbours (see build_passages).
+    passages = build_passages(session, sources)
+    answer = llm.generate(question, build_context(passages))
 
     # The model can cite pages it was never shown. Remove those and report them.
-    answer, invalid_citations = citations.check_citations(answer, sources)
-    return {"answer": answer, "sources": sources, "invalid_citations": invalid_citations}
+    answer, invalid_citations = citations.check_citations(answer, passages)
+    return {"answer": answer, "sources": passages, "invalid_citations": invalid_citations}
 
 
 def retrieve(session, qdrant, embedder, question, document_id=None, reranker=None):
@@ -77,6 +78,7 @@ def load_chunk_text(session, hits):
                 "filename": hit.payload["filename"],
                 "page": chunk.page,
                 "chunk_id": chunk.id,
+                "chunk_index": chunk.chunk_index,
                 "score": round(hit.score, 4),
                 "excerpt": chunk.text,
             }
@@ -101,8 +103,121 @@ def rerank(reranker, question, sources):
     return sorted(sources, key=lambda source: source["score"], reverse=True)
 
 
+def build_passages(session, sources):
+    """Widen each matched chunk into a passage: the chunk plus its neighbours.
+
+    Why: a small chunk matches well but may cut an answer in half. The chunks
+    just before and after it (same page) usually hold the rest.
+
+    Steps:
+      1. Turn each matched chunk into a window of chunk positions [lo, hi].
+      2. Merge windows that overlap, so the same text is not sent twice.
+      3. Load the text, best match first, adding each passage that still fits the
+         character budget (a passage that is too big is skipped, smaller ones may follow).
+    """
+    windows = merge_windows(sources)
+
+    passages = []
+    total_chars = 0
+    for window in windows:
+        text = load_window_text(session, window)
+        if not text:
+            continue  # the chunks are gone (for example the document was deleted)
+        if passages and total_chars + len(text) > settings.context_char_budget:
+            continue  # does not fit; a later, smaller passage still might (best one is always kept)
+        total_chars += len(text)
+        passages.append(
+            {
+                "document_id": window["document_id"],
+                "filename": window["filename"],
+                "page": window["page"],
+                "chunk_id": window["chunk_id"],
+                "score": window["score"],
+                "excerpt": text,
+            }
+        )
+    return passages
+
+
+def merge_windows(sources):
+    """One window per matched chunk: chunk positions [lo, hi] on one page.
+
+    Windows on the same page that overlap are merged into one.
+    The windows keep the order of the sources (best first).
+    """
+    reach = settings.context_window
+    windows = []
+    for source in sources:
+        lo = source["chunk_index"] - reach
+        hi = source["chunk_index"] + reach
+
+        for window in windows:
+            same_page = (
+                window["document_id"] == source["document_id"]
+                and window["page"] == source["page"]
+            )
+            if same_page and lo <= window["hi"] and hi >= window["lo"]:
+                window["lo"] = min(window["lo"], lo)
+                window["hi"] = max(window["hi"], hi)
+                break
+        else:
+            windows.append(
+                {
+                    "document_id": source["document_id"],
+                    "filename": source["filename"],
+                    "page": source["page"],
+                    "chunk_id": source["chunk_id"],
+                    "score": source["score"],
+                    "lo": lo,
+                    "hi": hi,
+                }
+            )
+    return windows
+
+
+def load_window_text(session, window):
+    """Read the chunks in a window from Postgres and join them into one text."""
+    rows = session.scalars(
+        select(Chunk)
+        .where(
+            Chunk.document_id == window["document_id"],
+            Chunk.page == window["page"],
+            Chunk.chunk_index.between(window["lo"], window["hi"]),
+        )
+        .order_by(Chunk.chunk_index)
+    )
+    return join_chunks([row.text for row in rows])
+
+
+def join_chunks(texts):
+    """Join consecutive chunks into one text.
+
+    Neighbouring chunks share a few repeated characters (the chunk overlap).
+    We detect that repeated part and keep it only once.
+    """
+    if not texts:
+        return ""
+    result = texts[0]
+    for text in texts[1:]:
+        shared = shared_length(result, text)
+        result += text[shared:] if shared else "\n" + text
+    return result
+
+
+MIN_SHARED = 10  # ignore accidental matches shorter than this
+
+
+def shared_length(first, second):
+    """How many characters at the end of `first` are repeated at the start of `second`."""
+    longest = min(len(first), len(second), settings.chunk_overlap + 50)
+    for length in range(longest, MIN_SHARED - 1, -1):
+        if first.endswith(second[:length]):
+            return length
+    return 0
+
+
 def build_context(sources):
-    """Put the chunks into one text block, each labelled so the LLM can cite it."""
+    """Put the passages into one text block, each labelled so the LLM can cite it."""
     parts = []
     for number, source in enumerate(sources, start=1):
         label = f"[Source {number}: {source['filename']}, page {source['page']}]"

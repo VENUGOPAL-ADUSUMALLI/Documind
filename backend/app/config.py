@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     retrieval_candidates: int = 100
     rerank_enabled: bool = True
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # How many neighbouring chunks (before and after) to add around each matched chunk.
+    # 0 = send only the matched chunk. 1 scored best in eval/run_eval.py.
+    context_window: int = 1
+    # Stop adding passages once the text sent to the LLM reaches this many characters.
+    context_char_budget: int = 6000
     max_upload_bytes: int = 20 * 1024 * 1024
 
     chunk_size: int = 800
