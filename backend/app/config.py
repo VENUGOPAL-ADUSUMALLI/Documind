@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     embedding_dim: int = 1536
 
     chat_model: str = "gpt-4o-mini"
+    # "hybrid" (dense + BM25 fused), "dense" (meaning only) or "bm25" (keywords only)
+    retrieval_mode: str = "hybrid"
     retrieval_top_k: int = 10
     # Cast a wide net with vector search, then let the reranker pick the best few.
     retrieval_candidates: int = 100
@@ -39,7 +41,7 @@ class Settings(BaseSettings):
     @property
     def qdrant_collection(self):
         # Vectors from different models/sizes must never share a collection.
-        return f"documind_{self.embedding_provider}_{self.embedding_dim}"
+        return f"documind_hybrid_{self.embedding_provider}_{self.embedding_dim}"
 
 
 settings = Settings()

@@ -90,3 +90,24 @@ def test_api_error_during_ask_is_shown(monkeypatch):
     app.chat_input[0].set_value("hello").run()
     assert not app.exception
     assert any("Document not found." in e.value for e in app.error)
+
+
+def test_removed_citations_show_a_warning(monkeypatch):
+    answer = dict(ANSWER, invalid_citations=["bio.pdf, page 9"])
+    monkeypatch.setattr(api_client, "list_documents", lambda: [DOC])
+    monkeypatch.setattr(api_client, "ask", lambda q, document_id=None: answer)
+
+    app = run_app()
+    app.chat_input[0].set_value("hello").run()
+
+    assert not app.exception
+    assert any("bio.pdf, page 9" in warning.value for warning in app.warning)
+
+
+def test_no_warning_when_all_citations_are_valid(monkeypatch):
+    monkeypatch.setattr(api_client, "list_documents", lambda: [DOC])
+    monkeypatch.setattr(api_client, "ask", lambda q, document_id=None: ANSWER)
+
+    app = run_app()
+    app.chat_input[0].set_value("hello").run()
+    assert not any("citations" in warning.value for warning in app.warning)

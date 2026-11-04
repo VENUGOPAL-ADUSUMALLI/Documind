@@ -11,10 +11,11 @@ from tests.test_ingestion import FakeEmbedder, make_pdf
 class FakeLLM:
     def __init__(self):
         self.calls = []
+        self.answer = "Photosynthesis happens in chloroplasts [bio.pdf, page 1]."
 
     def generate(self, question, context):
         self.calls.append((question, context))
-        return "Photosynthesis happens in chloroplasts [bio.pdf, page 1]."
+        return self.answer
 
 
 @pytest.fixture
@@ -138,3 +139,22 @@ def test_reranker_rescues_a_chunk_that_vector_search_ranks_low(client, monkeypat
     sources = response.json()["sources"]
     assert len(sources) == 1
     assert "Student Name(s)" in sources[0]["excerpt"]
+
+
+def test_invented_citation_is_removed_and_reported(client):
+    upload(client)
+    client.llm.answer = (
+        "Chloroplasts make energy [bio.pdf, page 1]. "
+        "The revolution began in 1789 [bio.pdf, page 9]."
+    )
+    body = client.post("/ask", json={"question": "chloroplasts energy"}).json()
+
+    assert "[bio.pdf, page 1]" in body["answer"]
+    assert "page 9" not in body["answer"]
+    assert body["invalid_citations"] == ["bio.pdf, page 9"]
+
+
+def test_valid_answer_has_no_invalid_citations(client):
+    upload(client)
+    body = client.post("/ask", json={"question": "chloroplasts energy"}).json()
+    assert body["invalid_citations"] == []

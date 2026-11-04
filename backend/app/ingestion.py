@@ -53,6 +53,28 @@ def ingest_pdf(session, qdrant, embedder, filename, pdf_bytes):
     return document
 
 
+def chunk_payload(document, chunk):
+    """Extra info stored next to a chunk's vector in Qdrant.
+
+    It lets us filter searches (for example "only this document")
+    and show the filename and page without asking Postgres.
+    """
+    return {
+        "document_id": document.id,
+        "filename": document.filename,
+        "page": chunk.page,
+        "chunk_index": chunk.chunk_index,
+    }
+
+
+def make_points(document, chunks, vectors):
+    """Pair each chunk with its vector, in the shape vector_store.upsert_chunks expects."""
+    return [
+        (chunk.id, chunk.text, vector, chunk_payload(document, chunk))
+        for chunk, vector in zip(chunks, vectors)
+    ]
+
+
 def process_document(session, qdrant, embedder, document, pdf_bytes):
     """Extract text, split it, embed it, and save everything."""
     # Read the PDF and cut it into chunks.
@@ -68,25 +90,14 @@ def process_document(session, qdrant, embedder, document, pdf_bytes):
     document.chunks.clear()
     session.flush()
 
-    # Build the rows for Postgres and the points for Qdrant.
-    qdrant_points = []
-    for index, ((page, text), vector) in enumerate(zip(chunks, vectors)):
+    # Build the rows for Postgres.
+    for index, (page, text) in enumerate(chunks):
         chunk_id = chunking.chunk_id(document.file_hash, index)
-
         document.chunks.append(Chunk(id=chunk_id, chunk_index=index, page=page, text=text))
 
-        # The payload is extra info stored next to the vector in Qdrant.
-        # It lets us filter searches (for example "only this document").
-        payload = {
-            "document_id": document.id,
-            "filename": document.filename,
-            "page": page,
-            "chunk_index": index,
-        }
-        qdrant_points.append((chunk_id, vector, payload))
-
+    # Save the vectors in Qdrant.
     vector_store.ensure_collection(qdrant)
-    vector_store.upsert_chunks(qdrant, qdrant_points)
+    vector_store.upsert_chunks(qdrant, make_points(document, document.chunks, vectors))
 
     # Everything worked: mark the document as finished.
     document.page_count = page_count

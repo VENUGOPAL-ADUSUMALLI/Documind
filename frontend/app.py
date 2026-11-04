@@ -13,6 +13,15 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
 
+def render_citation_warning(invalid_citations):
+    """Tell the user when the model cited pages it was never shown (they were removed)."""
+    if invalid_citations:
+        st.warning(
+            "Some citations could not be verified and were removed: "
+            + "; ".join(invalid_citations)
+        )
+
+
 def render_sources(sources):
     with st.expander(f"📎 Sources · {len(sources)}"):
         for number, source in enumerate(sources, start=1):
@@ -98,6 +107,7 @@ if not ready:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        render_citation_warning(message.get("invalid_citations"))
         if message.get("sources"):
             render_sources(message["sources"])
 
@@ -116,6 +126,7 @@ if question:
             st.error(str(exc))
         else:
             st.markdown(result["answer"])
+            render_citation_warning(result.get("invalid_citations"))
             if result["sources"]:
                 render_sources(result["sources"])
             st.session_state.messages.append(
@@ -123,5 +134,6 @@ if question:
                     "role": "assistant",
                     "content": result["answer"],
                     "sources": result["sources"],
+                    "invalid_citations": result.get("invalid_citations", []),
                 }
             )

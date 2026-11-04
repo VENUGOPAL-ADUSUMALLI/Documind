@@ -1,8 +1,21 @@
-"""All talking to Qdrant (the vector database) happens here."""
+"""All talking to Qdrant (the vector database) happens here.
+
+Each chunk is stored as ONE point with TWO vectors:
+  "dense"  numbers that capture the meaning of the text   (search by meaning)
+  "bm25"   weights for the words in the text              (search by exact words)
+"""
 
 from qdrant_client import QdrantClient, models
 
+from app import sparse
 from app.config import settings
+
+DENSE = "dense"
+BM25 = "bm25"
+
+# In hybrid mode, each of the two searches fetches at least this many results
+# before they are merged, so the merge has enough to work with.
+MIN_BRANCH_LIMIT = 20
 
 
 def make_qdrant_client(url=None):
@@ -18,10 +31,16 @@ def ensure_collection(client):
     if not client.collection_exists(settings.qdrant_collection):
         client.create_collection(
             collection_name=settings.qdrant_collection,
-            vectors_config=models.VectorParams(
-                size=settings.embedding_dim,  # how many numbers in each vector
-                distance=models.Distance.COSINE,  # how "closeness" is measured
-            ),
+            vectors_config={
+                DENSE: models.VectorParams(
+                    size=settings.embedding_dim,  # how many numbers in each vector
+                    distance=models.Distance.COSINE,  # how "closeness" is measured
+                )
+            },
+            sparse_vectors_config={
+                # IDF = Qdrant gives rare words more weight than common words.
+                BM25: models.SparseVectorParams(modifier=models.Modifier.IDF)
+            },
         )
 
 
@@ -38,15 +57,20 @@ def only_this_document(document_id):
 
 
 def upsert_chunks(client, points):
-    """Save points. Each point is (chunk_id, vector, payload).
+    """Save chunks. Each point is (chunk_id, text, dense_vector, payload).
 
+    The keyword vector is computed here from the text.
     "Upsert" = insert, or overwrite if the id already exists.
     """
     client.upsert(
         collection_name=settings.qdrant_collection,
         points=[
-            models.PointStruct(id=chunk_id, vector=vector, payload=payload)
-            for chunk_id, vector, payload in points
+            models.PointStruct(
+                id=chunk_id,
+                vector={DENSE: dense_vector, BM25: sparse.encode_document(text)},
+                payload=payload,
+            )
+            for chunk_id, text, dense_vector, payload in points
         ],
     )
 
@@ -59,17 +83,56 @@ def delete_document_points(client, document_id):
     )
 
 
-def search(client, query_vector, limit=5, document_id=None):
-    """Find the chunks whose vectors are closest to the question's vector.
+def search(client, dense_vector, query_text, limit=5, document_id=None, mode=None):
+    """Find the best chunks for a question.
+
+    mode "dense":  closest by meaning only
+    mode "bm25":   best keyword match only
+    mode "hybrid": run both, then merge the two ranked lists with
+                   Reciprocal Rank Fusion (RRF): a chunk ranked high in BOTH
+                   lists beats a chunk that is high in only one.
 
     If document_id is given, only that document's chunks are searched.
     """
+    mode = mode or settings.retrieval_mode
     query_filter = only_this_document(document_id) if document_id else None
-    result = client.query_points(
-        collection_name=settings.qdrant_collection,
-        query=query_vector,
-        limit=limit,
-        query_filter=query_filter,
-        with_payload=True,
-    )
+    branch_limit = max(limit, MIN_BRANCH_LIMIT)
+
+    # Build the individual searches we need.
+    searches = []
+    if mode in ("dense", "hybrid"):
+        searches.append(
+            models.Prefetch(
+                query=dense_vector, using=DENSE, limit=branch_limit, filter=query_filter
+            )
+        )
+    keyword_query = sparse.encode_query(query_text)
+    if mode in ("bm25", "hybrid") and keyword_query.indices:  # skip if no usable words
+        searches.append(
+            models.Prefetch(
+                query=keyword_query, using=BM25, limit=branch_limit, filter=query_filter
+            )
+        )
+
+    if not searches:
+        return []
+
+    # One search: run it directly. Two searches: run both and merge with RRF.
+    if len(searches) == 1:
+        result = client.query_points(
+            collection_name=settings.qdrant_collection,
+            query=searches[0].query,
+            using=searches[0].using,
+            limit=limit,
+            query_filter=query_filter,
+            with_payload=True,
+        )
+    else:
+        result = client.query_points(
+            collection_name=settings.qdrant_collection,
+            prefetch=searches,
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
+            limit=limit,
+            with_payload=True,
+        )
     return result.points

@@ -71,14 +71,14 @@ def test_search_returns_relevant_page_with_metadata(env):
     session, qdrant, embedder = env
     document = ingest_pdf(session, qdrant, embedder, "bio.pdf", PDF)
 
-    hits = vector_store.search(qdrant, embedder.embed_query("chloroplasts sunlight energy"), limit=1)
+    hits = vector_store.search(qdrant, embedder.embed_query("chloroplasts sunlight energy"), "chloroplasts sunlight energy", limit=1)
     assert hits[0].payload["page"] == 1
     assert hits[0].payload["filename"] == "bio.pdf"
 
     # Metadata filter: another document id matches nothing.
-    none = vector_store.search(qdrant, embedder.embed_query("sunlight"), document_id="other")
+    none = vector_store.search(qdrant, embedder.embed_query("sunlight"), "sunlight", document_id="other")
     assert none == []
-    some = vector_store.search(qdrant, embedder.embed_query("sunlight"), document_id=document.id)
+    some = vector_store.search(qdrant, embedder.embed_query("sunlight"), "sunlight", document_id=document.id)
     assert len(some) == 2
 
 
