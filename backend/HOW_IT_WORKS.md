@@ -30,10 +30,11 @@ Two stores, each with one job:
 | 1 | Turn the question into a dense vector and a keyword vector | `rag.py` `search_qdrant`, `sparse.py` |
 | 2 | Qdrant runs both searches and merges them with RRF; returns 100 candidates | `vector_store.py` `search` |
 | 3 | Load those chunks' text from Postgres | `rag.py` `load_chunk_text` |
-| 4 | Reranker re-sorts them; keep the best 10 | `rag.py` `rerank`, `reranker.py` |
-| 5 | Put them into one labelled text block | `rag.py` `build_context` |
-| 6 | The LLM writes an answer with citations | `llm.py` |
-| 7 | Check every citation against the pages we sent; remove invented ones | `citations.py` |
+| 4 | Reranker re-sorts them; keep the best few | `rag.py` `rerank`, `reranker.py` |
+| 5 | Widen each match with its neighbouring chunks (same page), merge overlaps, stay within the character budget | `rag.py` `build_passages` |
+| 6 | Put the passages into one labelled text block | `rag.py` `build_context` |
+| 7 | The LLM writes an answer with citations | `llm.py` |
+| 8 | Check every citation against the pages we sent; remove invented ones | `citations.py` |
 
 ## Where to change things
 
@@ -45,6 +46,8 @@ All settings are in `app/config.py` (and can be overridden with environment vari
 | How many chunks the LLM reads | `retrieval_top_k` |
 | How many candidates the reranker sees | `retrieval_candidates` |
 | Search mode: `hybrid`, `dense` or `bm25` | `retrieval_mode` |
+| How many neighbouring chunks to add around a match (0 = none) | `context_window` |
+| Maximum characters sent to the LLM | `context_char_budget` |
 | Turn the reranker off | `rerank_enabled` |
 | Embedding provider (openai / gemini) | `embedding_provider` |
 | Answer model | `chat_model` |
@@ -77,3 +80,16 @@ Postgres keeps all chunk text, so the PDFs are not needed again:
 ## Evaluate a change
 
     cd backend && python -m eval.run_eval --docs /folder/with/pdfs
+
+## Context window (neighbour expansion)
+
+A small chunk matches well but can cut an answer in half. After reranking, each matched chunk is widened
+with `context_window` chunks before and after it, taken from the same page. Windows that overlap are merged,
+and the repeated overlap text between neighbouring chunks is removed. Passages are added best-first until
+`context_char_budget` is reached; a passage that does not fit is skipped.
+
+Limit: windows stay on one page (so page citations stay exact), so a list that continues onto the next page
+is only completed if the next page's chunks are also retrieved.
+
+Measured on 6 list/fact questions (see `python -m eval.run_eval`): matched chunk only 48% of required facts,
+window +-1 85%, window +-2 81%. Small question set: treat as a direction, not a precise number.

@@ -5,6 +5,8 @@ How it works:
   2. For every question in questions.json, run the real search.
   3. Check if the expected (document, page) is among the top results.
   4. Print hit-rate and MRR for each setting, so settings can be compared.
+  5. Then ask the LLM the questions that list "facts", and check how many of those
+     facts appear in the answer (completeness), for different context-window sizes.
      (dense = meaning search, bm25 = keyword search, hybrid = both merged.)
 
 Run it from the backend folder:
@@ -36,6 +38,9 @@ CONFIGS = [
 ]
 
 # All settings above share one index, built with these chunk settings.
+# Context-window sizes compared in the answer-completeness test.
+WINDOWS = [("matched chunk only", 0), ("window +-1 chunk", 1), ("window +-2 chunks", 2)]
+
 CHUNK_SIZE = 800
 CHUNK_OVERLAP = 150
 
@@ -80,6 +85,30 @@ def evaluate(session, qdrant, embedder, reranker, questions):
     return results
 
 
+def count_facts(answer, facts):
+    """How many required facts appear in the answer?
+
+    A fact like "T-of-N | threshold" counts if ANY of its alternatives is in the answer.
+    """
+    text = answer.lower()
+    found = 0
+    for fact in facts:
+        if any(option.strip().lower() in text for option in fact.split("|")):
+            found += 1
+    return found
+
+
+def evaluate_answers(session, qdrant, embedder, llm, reranker, questions):
+    """Ask the LLM each question. Returns {question: (facts_found, facts_total, context_chars)}."""
+    outcome = {}
+    for question in questions:
+        result = rag.answer_question(session, qdrant, embedder, llm, question["question"], None, reranker)
+        context_chars = sum(len(source["excerpt"]) for source in result["sources"])
+        found = count_facts(result["answer"], question["facts"])
+        outcome[question["question"]] = (found, len(question["facts"]), context_chars)
+    return outcome
+
+
 def summarize(results):
     """hit-rate = share of questions with the right page in the top results.
     MRR = average of 1/rank (a miss counts as 0)."""
@@ -92,6 +121,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--docs", default="eval/docs", help="folder containing the PDFs")
     parser.add_argument("--questions", default="eval/questions.json")
+    parser.add_argument("--skip-answers", action="store_true", help="only run the retrieval part")
     args = parser.parse_args()
 
     docs_dir = Path(args.docs).expanduser()
@@ -131,9 +161,39 @@ def main():
 
     # Questions with no answer in the documents: show what the app says. Judge by eye.
     settings.retrieval_mode = "hybrid"
+    settings.context_window = 0
     for question in unanswerable:
         answer = rag.answer_question(session, qdrant, embedder, llm, question["question"], None, reranker)
         print(f'\nNot in documents: "{question["question"]}"\n  app says: {answer["answer"]}')
+
+    if args.skip_answers:
+        return
+
+    # Completeness: does the answer contain all the facts it should?
+    with_facts = [q for q in answerable if q.get("facts")]
+    settings.retrieval_mode = "hybrid"
+    outcomes = {}
+    for name, window in WINDOWS:
+        settings.context_window = window
+        outcomes[name] = evaluate_answers(session, qdrant, embedder, llm, reranker, with_facts)
+
+    print(f"\nAnswer completeness ({len(with_facts)} questions, hybrid + reranker, top {TOP_K})\n")
+    print(f'{"context sent to the LLM":26} {"facts found":>12} {"avg context chars":>18}')
+    for name, _ in WINDOWS:
+        rows = outcomes[name].values()
+        found = sum(r[0] for r in rows)
+        total = sum(r[1] for r in rows)
+        average_chars = sum(r[2] for r in rows) / len(rows)
+        print(f"{name:26} {f'{found}/{total} ({found / total:.0%})':>12} {average_chars:18.0f}")
+
+    print("\nPer question (facts found / facts required):")
+    for question in with_facts:
+        cells = []
+        for name, _ in WINDOWS:
+            found, total, _chars = outcomes[name][question["question"]]
+            cells.append(f"{found}/{total}")
+        print(f'  {"   ".join(f"{c:>4}" for c in cells)}   {question["question"]}')
+    print("  (columns, in order: " + " | ".join(name for name, _ in WINDOWS) + ")")
 
 
 if __name__ == "__main__":
