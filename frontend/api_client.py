@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -16,7 +17,10 @@ def _request(method, path, **kwargs):
     try:
         response = httpx.request(method, f"{API_URL}{path}", timeout=TIMEOUT, **kwargs)
     except httpx.HTTPError:
-        raise ApiError(f"Cannot reach the DocuMind API at {API_URL}. Is the backend running?")
+        # Log only host and port: the full URL could contain credentials if it is misconfigured.
+        parts = urlsplit(API_URL)
+        print(f"Cannot reach the DocuMind API at host={parts.hostname} port={parts.port}", flush=True)
+        raise ApiError("Cannot reach the DocuMind API. Is the backend running?")
 
     if response.status_code >= 400:
         try:

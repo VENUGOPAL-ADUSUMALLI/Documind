@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 FRONTEND = Path(__file__).resolve().parents[1]
@@ -137,3 +138,16 @@ def test_no_password_gate_when_app_password_is_not_set(monkeypatch):
     monkeypatch.setattr(api_client, "list_documents", lambda: [DOC])
     app = run_app()
     assert app.chat_input and not app.text_input
+
+
+def test_unreachable_backend_message_never_contains_the_configured_url(monkeypatch):
+    monkeypatch.setattr(api_client, "API_URL", "postgresql://user:secret-pass@internal-host:5432/db")
+
+    def refuse(*args, **kwargs):
+        raise api_client.httpx.ConnectError("refused")
+
+    monkeypatch.setattr(api_client.httpx, "request", refuse)
+    with pytest.raises(api_client.ApiError) as error:
+        api_client.list_documents()
+    assert "secret-pass" not in str(error.value)
+    assert "internal-host" not in str(error.value)
