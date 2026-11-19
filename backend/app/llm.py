@@ -21,7 +21,6 @@ Grounding and citation rules:
 
 
 class OpenAIChat:
-    """Generates the final answer from a question and retrieved passages."""
 
     def __init__(self, api_key=None):
         api_key = api_key or settings.openai_api_key

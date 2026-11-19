@@ -49,7 +49,7 @@ All settings are in `app/config.py` (and can be overridden with environment vari
 | How many neighbouring chunks to add around a match (0 = none) | `context_window` |
 | Maximum characters sent to the LLM | `context_char_budget` |
 | Turn the reranker off | `rerank_enabled` |
-| Embedding provider (openai / gemini) | `embedding_provider` |
+| Embedding model and vector size | `openai_embedding_model`, `embedding_dim` (reindex afterwards) |
 | Answer model | `chat_model` |
 
 ## Why some choices were made

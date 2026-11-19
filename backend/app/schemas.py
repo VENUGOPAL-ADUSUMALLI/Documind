@@ -31,5 +31,4 @@ class SourceOut(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     sources: list[SourceOut]
-    # Citations the model wrote that did not match any retrieved page; removed from the answer.
     invalid_citations: list[str] = []
