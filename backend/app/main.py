@@ -9,7 +9,7 @@
 
 The endpoints are plain `def` (not `async def`) on purpose: the database and
 AI calls are blocking, and FastAPI runs plain functions in worker threads,
-so one slow request does not freeze the others.
+so one slow request does not freeze the others.....
 """
 
 from contextlib import asynccontextmanager
