@@ -111,3 +111,29 @@ def test_no_warning_when_all_citations_are_valid(monkeypatch):
     app = run_app()
     app.chat_input[0].set_value("hello").run()
     assert not any("citations" in warning.value for warning in app.warning)
+
+
+def test_password_gate_blocks_everything_until_the_password_is_entered(monkeypatch):
+    calls = []
+    monkeypatch.setenv("APP_PASSWORD", "open-sesame")
+    monkeypatch.setattr(api_client, "list_documents", lambda: calls.append("list") or [DOC])
+
+    app = run_app()
+    assert not app.exception
+    assert len(app.text_input) == 1 and not app.chat_input
+    assert calls == []  # the backend is not even contacted
+
+    app.text_input[0].set_value("wrong").run()
+    assert any("Wrong password" in error.value for error in app.error)
+    assert calls == []
+
+    app.text_input[0].set_value("open-sesame").run()
+    assert not app.exception
+    assert app.chat_input and calls  # the real page is shown now
+
+
+def test_no_password_gate_when_app_password_is_not_set(monkeypatch):
+    monkeypatch.delenv("APP_PASSWORD", raising=False)
+    monkeypatch.setattr(api_client, "list_documents", lambda: [DOC])
+    app = run_app()
+    assert app.chat_input and not app.text_input

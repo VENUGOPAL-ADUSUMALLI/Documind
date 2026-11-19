@@ -1,3 +1,6 @@
+import hmac
+import os
+
 import streamlit as st
 
 import api_client
@@ -6,6 +9,24 @@ from api_client import ApiError
 st.set_page_config(page_title="DocuMind", page_icon="📚", layout="wide")
 
 STATUS_ICONS = {"done": "✅", "processing": "⏳", "pending": "⏳", "failed": "❌"}
+
+
+def require_password():
+    """If APP_PASSWORD is set, show only a password box until it is entered correctly."""
+    expected = os.getenv("APP_PASSWORD")
+    if not expected or st.session_state.get("authenticated"):
+        return
+
+    entered = st.text_input("Password", type="password")
+    if entered and hmac.compare_digest(entered.encode(), expected.encode()):
+        st.session_state.authenticated = True
+        st.rerun()
+    if entered:
+        st.error("Wrong password.")
+    st.stop()
+
+
+require_password()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
