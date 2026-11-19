@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -15,6 +16,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://documind:documind@localhost:5432/documind"
     qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str = ""
 
     openai_embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = 1536
@@ -29,6 +31,16 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 20 * 1024 * 1024
     chunk_size: int = 800
     chunk_overlap: int = 150
+
+    @field_validator("database_url")
+    @classmethod
+    def use_psycopg_driver(cls, value):
+        # Hosts such as Railway give "postgresql://..." (or "postgres://..."),
+        # but SQLAlchemy must be told to use the psycopg 3 driver we install.
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix):]
+        return value
 
     @property
     def qdrant_collection(self):

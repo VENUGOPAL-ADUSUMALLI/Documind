@@ -13,7 +13,7 @@ def make_qdrant_client(url=None):
     url = url or settings.qdrant_url
     if url == ":memory:":
         return QdrantClient(":memory:")
-    return QdrantClient(url=url)
+    return QdrantClient(url=url, api_key=settings.qdrant_api_key or None)
 
 
 def ensure_collection(client):
