@@ -9,7 +9,6 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url=None):
-    """Create a SQLAlchemy engine; SQLite needs one extra flag for use across threads."""
     url = url or settings.database_url
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     return create_engine(url, connect_args=connect_args)

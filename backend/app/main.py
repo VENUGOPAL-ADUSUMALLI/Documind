@@ -35,7 +35,6 @@ from app.schemas import AskRequest, AskResponse, DocumentOut
 
 @asynccontextmanager
 async def lifespan(app):
-    """Runs once when the server starts: create the database tables if missing."""
     Base.metadata.create_all(get_engine())
     yield
 
@@ -44,7 +43,6 @@ app = FastAPI(title="DocuMind", lifespan=lifespan)
 
 
 def get_document_or_404(session, document_id):
-    """Fetch a document, or answer the request with a 404 'not found' error."""
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(404, "Document not found.")
@@ -63,23 +61,18 @@ def upload_document(
     qdrant=Depends(get_qdrant),
     embedder=Depends(get_text_embedder),
 ):
-    # Read the file, but never more than the size limit (+1 byte to detect "too big").
     pdf_bytes = file.file.read(settings.max_upload_bytes + 1)
     if len(pdf_bytes) > settings.max_upload_bytes:
         raise HTTPException(413, "File is too large.")
 
-    # Every real PDF starts with the bytes "%PDF".
     if not pdf_bytes.startswith(b"%PDF"):
         raise HTTPException(400, "Only PDF files are supported.")
 
     try:
         return ingest_pdf(session, qdrant, embedder, file.filename or "upload.pdf", pdf_bytes)
     except ValueError as error:
-        # A problem with the file itself (for example no text in it).
         raise HTTPException(422, str(error))
     except Exception:
-        # Something else broke (API down, etc). The document row is already
-        # marked 'failed' with the real error, so we show a short message here.
         raise HTTPException(502, "Ingestion failed. Check the document status for details.")
 
 
@@ -101,8 +94,6 @@ def delete_document(
     qdrant=Depends(get_qdrant),
 ):
     document = get_document_or_404(session, document_id)
-
-    # Remove the vectors from Qdrant, then the rows from Postgres.
     vector_store.ensure_collection(qdrant)
     vector_store.delete_document_points(qdrant, document_id)
     session.delete(document)  # its chunks are deleted with it
@@ -122,7 +113,6 @@ def ask(
     if not question:
         raise HTTPException(422, "Please enter a question.")
 
-    # If the user limited the search to one document, make sure it exists.
     if request.document_id:
         get_document_or_404(session, request.document_id)
 

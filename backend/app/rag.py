@@ -1,10 +1,3 @@
-"""Answering a question:  question -> find relevant chunks -> ask the LLM -> answer.
-
-Finding the chunks has three steps:
-  1. SEARCH   Qdrant returns many candidate chunks (hybrid: meaning + keywords, merged).
-  2. LOAD     Qdrant only knows ids and scores, so we load the real text from Postgres.
-  3. RERANK   A second, more careful model re-sorts the candidates; we keep the best few.
-"""
 
 from sqlalchemy import select
 
@@ -19,28 +12,19 @@ NO_RESULTS_ANSWER = (
 
 
 def answer_question(session, qdrant, embedder, llm, question, document_id=None, reranker=None):
-    """Returns the answer, the chunks that were used, and any citations that were removed."""
     sources = retrieve(session, qdrant, embedder, question, document_id, reranker)
 
-    # Nothing found: don't waste an LLM call.
     if not sources:
         return {"answer": NO_RESULTS_ANSWER, "sources": [], "invalid_citations": []}
 
-    # Give the model the matched chunks plus their neighbours (see build_passages).
     passages = build_passages(session, sources)
     answer = llm.generate(question, build_context(passages))
-
-    # The model can cite pages it was never shown. Remove those and report them.
     answer, invalid_citations = citations.check_citations(answer, passages)
     return {"answer": answer, "sources": passages, "invalid_citations": invalid_citations}
 
 
 def retrieve(session, qdrant, embedder, question, document_id=None, reranker=None):
-    """Find the best chunks for a question. Returns a list of 'source' dicts."""
-    # With a reranker we fetch many candidates (it will pick the best ones).
-    # Without one, we fetch only as many as we will finally use.
     how_many = settings.retrieval_candidates if reranker else settings.retrieval_top_k
-
     hits = search_qdrant(qdrant, embedder, question, document_id, how_many)  # step 1
     sources = load_chunk_text(session, hits)                                  # step 2
     if reranker:
@@ -50,7 +34,6 @@ def retrieve(session, qdrant, embedder, question, document_id=None, reranker=Non
 
 
 def search_qdrant(qdrant, embedder, question, document_id, how_many):
-    """Step 1: search by meaning AND by keywords (see settings.retrieval_mode)."""
     vector_store.ensure_collection(qdrant)
     question_vector = embedder.embed_query(question)
     return vector_store.search(
@@ -59,7 +42,6 @@ def search_qdrant(qdrant, embedder, question, document_id, how_many):
 
 
 def load_chunk_text(session, hits):
-    """Step 2: attach the real text (from Postgres) to each Qdrant hit."""
     if not hits:
         return []
 
@@ -87,11 +69,6 @@ def load_chunk_text(session, hits):
 
 
 def rerank(reranker, question, sources):
-    """Step 3: re-score every candidate against the question, best first.
-
-    The score is replaced by the reranker's score (higher is better;
-    it can be negative, only the order matters).
-    """
     if not sources:
         return sources
 
@@ -104,17 +81,6 @@ def rerank(reranker, question, sources):
 
 
 def build_passages(session, sources):
-    """Widen each matched chunk into a passage: the chunk plus its neighbours.
-
-    Why: a small chunk matches well but may cut an answer in half. The chunks
-    just before and after it (same page) usually hold the rest.
-
-    Steps:
-      1. Turn each matched chunk into a window of chunk positions [lo, hi].
-      2. Merge windows that overlap, so the same text is not sent twice.
-      3. Load the text, best match first, adding each passage that still fits the
-         character budget (a passage that is too big is skipped, smaller ones may follow).
-    """
     windows = merge_windows(sources)
 
     passages = []
@@ -122,9 +88,9 @@ def build_passages(session, sources):
     for window in windows:
         text = load_window_text(session, window)
         if not text:
-            continue  # the chunks are gone (for example the document was deleted)
+            continue
         if passages and total_chars + len(text) > settings.context_char_budget:
-            continue  # does not fit; a later, smaller passage still might (best one is always kept)
+            continue
         total_chars += len(text)
         passages.append(
             {
@@ -140,11 +106,6 @@ def build_passages(session, sources):
 
 
 def merge_windows(sources):
-    """One window per matched chunk: chunk positions [lo, hi] on one page.
-
-    Windows on the same page that overlap are merged into one.
-    The windows keep the order of the sources (best first).
-    """
     reach = settings.context_window
     windows = []
     for source in sources:
@@ -176,7 +137,6 @@ def merge_windows(sources):
 
 
 def load_window_text(session, window):
-    """Read the chunks in a window from Postgres and join them into one text."""
     rows = session.scalars(
         select(Chunk)
         .where(
@@ -190,11 +150,6 @@ def load_window_text(session, window):
 
 
 def join_chunks(texts):
-    """Join consecutive chunks into one text.
-
-    Neighbouring chunks share a few repeated characters (the chunk overlap).
-    We detect that repeated part and keep it only once.
-    """
     if not texts:
         return ""
     result = texts[0]
@@ -204,11 +159,10 @@ def join_chunks(texts):
     return result
 
 
-MIN_SHARED = 10  # ignore accidental matches shorter than this
+MIN_SHARED = 10
 
 
 def shared_length(first, second):
-    """How many characters at the end of `first` are repeated at the start of `second`."""
     longest = min(len(first), len(second), settings.chunk_overlap + 50)
     for length in range(longest, MIN_SHARED - 1, -1):
         if first.endswith(second[:length]):
@@ -217,7 +171,6 @@ def shared_length(first, second):
 
 
 def build_context(sources):
-    """Put the passages into one text block, each labelled so the LLM can cite it."""
     parts = []
     for number, source in enumerate(sources, start=1):
         label = f"[Source {number}: {source['filename']}, page {source['page']}]"
