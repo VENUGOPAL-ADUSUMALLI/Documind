@@ -15,7 +15,12 @@ Chunk IDs are deterministic (hash of file + position), so re-uploading a file ne
 
 ## Run
 
-1. Put `OPENAI_API_KEY=...` in a `.env` file at the repo root.
+1. Create a `.env` file at the repo root with:
+   ```
+   OPENAI_API_KEY=...
+   DATABASE_URL=postgresql+psycopg://documind:documind@localhost:5432/documind
+   ```
+   (`DATABASE_URL` is required; the values above match `docker-compose.yml`.)
 2. Start the databases: `docker compose up -d`
 3. Backend:
    ```

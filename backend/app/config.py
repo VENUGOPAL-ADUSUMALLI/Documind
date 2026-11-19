@@ -10,11 +10,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=ROOT_DIR / ".env",
         extra="ignore",
+        # Keep secrets (API keys) out of validation error messages and logs.
+        hide_input_in_errors=True,
     )
 
     openai_api_key: str = ""
 
-    database_url: str = "postgresql+psycopg://documind:documind@localhost:5432/documind"
+    # Required: there is no default, so a missing value fails at startup with a clear message.
+    database_url: str
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
 

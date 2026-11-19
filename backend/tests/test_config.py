@@ -1,3 +1,6 @@
+import pytest
+from pydantic import ValidationError
+
 from app.config import Settings
 
 
@@ -15,3 +18,9 @@ def test_urls_that_are_already_correct_are_left_alone():
     psycopg_url = "postgresql+psycopg://user:pass@host:5432/db"
     assert Settings(database_url=psycopg_url).database_url == psycopg_url
     assert Settings(database_url="sqlite:///x.db").database_url == "sqlite:///x.db"
+
+
+def test_database_url_is_required(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(ValidationError, match="database_url"):
+        Settings(_env_file=None)
